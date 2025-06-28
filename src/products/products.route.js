@@ -132,28 +132,47 @@ router.get("/:id", async (req, res) => {
 });
 
 // update a product
-router.patch("/update-product/:id", verifyToken, verifyAdmin, async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const updatedProduct = await Products.findByIdAndUpdate(
-      productId,
-      { ...req.body },
-      { new: true }
-    );
+const multer = require('multer');
+const upload = multer();
+router.patch("/update-product/:id", 
+  verifyToken, 
+  verifyAdmin, 
+  upload.single('image'), // معالجة تحميل الصورة
+  async (req, res) => {
+    try {
+      const productId = req.params.id;
+      const updateData = {
+        ...req.body,
+        author: req.body.author
+      };
 
-    if (!updatedProduct) {
-      return res.status(404).send({ message: "Product not found" });
+      if (req.file) {
+        updateData.image = [req.file.path]; // أو أي طريقة تخزين تستخدمها للصور
+      }
+
+      const updatedProduct = await Products.findByIdAndUpdate(
+        productId,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
+
+      if (!updatedProduct) {
+        return res.status(404).send({ message: "المنتج غير موجود" });
+      }
+
+      res.status(200).send({
+        message: "تم تحديث المنتج بنجاح",
+        product: updatedProduct,
+      });
+    } catch (error) {
+      console.error("Error updating the product", error);
+      res.status(500).send({ 
+        message: "فشل تحديث المنتج",
+        error: error.message
+      });
     }
-
-    res.status(200).send({
-      message: "Product updated successfully",
-      product: updatedProduct,
-    });
-  } catch (error) {
-    console.error("Error updating the product", error);
-    res.status(500).send({ message: "Failed to update the product" });
   }
-});
+);
 
 // delete a product
 

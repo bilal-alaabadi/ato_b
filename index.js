@@ -15,7 +15,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
     cors({
-        origin:"https://em-f.vercel.app",
+        origin:"http://localhost:5173",
         // origin: "https://www.royasow.store",//مال الفرونت اند
         credentials: true,
     })
