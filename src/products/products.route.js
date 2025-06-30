@@ -1,16 +1,41 @@
 const express = require("express");
+const multer = require('multer');
 const Products = require("./products.model");
 const Reviews = require("../reviews/reviews.model");
 const verifyToken = require("../middleware/verifyToken");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const router = express.Router();
-
-// post a product
 const { uploadImages } = require("../utils/uploadImage");
 
+// Initialize multer upload middleware first
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/products/');
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + '.' + file.originalname.split('.').pop());
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!'), false);
+    }
+  }
+});
+
+// post a product
 router.post("/uploadImages", async (req, res) => {
     try {
-        const { images } = req.body; // images هي مصفوفة من base64
+        const { images } = req.body;
         if (!images || !Array.isArray(images)) {
             return res.status(400).send({ message: "يجب إرسال مصفوفة من الصور" });
         }
@@ -23,42 +48,33 @@ router.post("/uploadImages", async (req, res) => {
     }
 });
 
-// نقطة النهاية لإنشاء منتج
+// Create product endpoint
 router.post("/create-product", async (req, res) => {
   try {
-    const { name, category, description, price, oldPrice, image, color, author } = req.body;
+    const { name, description, image, author } = req.body;
 
-    // تحقق من الحقول المطلوبة
-    if (!name || !category || !description || !price || !image || !author) {
-      return res.status(400).send({ message: "جميع الحقول المطلوبة يجب إرسالها" });
+    // التحقق من الحقول المطلوبة الأساسية فقط
+    if (!name || !description || !image || !author) {
+      return res.status(400).send({ message: "الحقول الأساسية مطلوبة: الاسم، الوصف، الصورة والمؤلف" });
     }
 
     const newProduct = new Products({
       name,
-      category,
       description,
-      price,
-      oldPrice,
-      image, // يجب أن تكون مصفوفة من روابط الصور
-      color,
+      image,
       author,
+      // تعيين قيم افتراضية للحقول الأخرى
+      category: 'عام', // أو يمكن تركها undefined إذا كان مسموحاً
+      price: 0, // قيمة افتراضية
+      quantity: 1, // قيمة افتراضية
+      // باقي الحقول ستكون undefined أو بالقيم الافتراضية من نموذج المنتج
     });
 
     const savedProduct = await newProduct.save();
-
-    // حساب التقييمات إذا وجدت
-    const reviews = await Reviews.find({ productId: savedProduct._id });
-    if (reviews.length > 0) {
-      const totalRating = reviews.reduce((acc, review) => acc + review.rating, 0);
-      const averageRating = totalRating / reviews.length;
-      savedProduct.rating = averageRating;
-      await savedProduct.save();
-    }
-
     res.status(201).send(savedProduct);
   } catch (error) {
     console.error("Error creating new product", error);
-    res.status(500).send({ message: "Failed to create new product" });
+    res.status(500).send({ message: "فشل إنشاء المنتج" });
   }
 });
 
@@ -109,7 +125,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-//   get single Product
+// get single Product
 router.get("/:id", async (req, res) => {
   try {
     const productId = req.params.id;
@@ -132,12 +148,10 @@ router.get("/:id", async (req, res) => {
 });
 
 // update a product
-const multer = require('multer');
-const upload = multer();
 router.patch("/update-product/:id", 
   verifyToken, 
   verifyAdmin, 
-  upload.single('image'), // معالجة تحميل الصورة
+  upload.single('image'),
   async (req, res) => {
     try {
       const productId = req.params.id;
@@ -147,7 +161,7 @@ router.patch("/update-product/:id",
       };
 
       if (req.file) {
-        updateData.image = [req.file.path]; // أو أي طريقة تخزين تستخدمها للصور
+        updateData.image = [req.file.path];
       }
 
       const updatedProduct = await Products.findByIdAndUpdate(
@@ -175,7 +189,6 @@ router.patch("/update-product/:id",
 );
 
 // delete a product
-
 router.delete("/:id", async (req, res) => {
   try {
     const productId = req.params.id;
@@ -219,10 +232,10 @@ router.get("/related/:id", async (req, res) => {
     );
 
     const relatedProducts = await Products.find({
-      _id: { $ne: id }, // Exclude the current product
+      _id: { $ne: id },
       $or: [
-        { name: { $regex: titleRegex } }, // Match similar names
-        { category: product.category }, // Match the same category
+        { name: { $regex: titleRegex } },
+        { category: product.category },
       ],
     });
 
